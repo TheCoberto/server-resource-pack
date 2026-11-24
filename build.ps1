@@ -197,11 +197,24 @@ $mappings = @{ format_version = 2; items = @{
 # ---------- Package ----------
 $dist = Join-Path $root 'dist'
 New-Item -ItemType Directory -Force $dist | Out-Null
-Add-Type -AssemblyName System.IO.Compression.FileSystem
-foreach ($p in @(@("$out", "$dist\CobertoServerPack.zip"), @("$bout", "$dist\CobertoServerPack.mcpack"))) {
-    if (Test-Path $p[1]) { Remove-Item $p[1] -Force }
-    [IO.Compression.ZipFile]::CreateFromDirectory($p[0], $p[1])
+Add-Type -AssemblyName System.IO.Compression, System.IO.Compression.FileSystem
+# Not ZipFile.CreateFromDirectory: in Windows PowerShell it writes paths with '\', and
+# Minecraft and Geyser only find files whose zip paths use '/'.
+function New-PackZip([string]$folder, [string]$zipPath) {
+    if (Test-Path $zipPath) { Remove-Item $zipPath -Force }
+    $base = (Resolve-Path $folder).Path.TrimEnd('\') + '\'
+    $zip = [IO.Compression.ZipFile]::Open($zipPath, [IO.Compression.ZipArchiveMode]::Create)
+    try {
+        foreach ($file in Get-ChildItem $folder -Recurse -File | Sort-Object FullName) {
+            $name = $file.FullName.Substring($base.Length).Replace('\', '/')
+            [void][IO.Compression.ZipFileExtensions]::CreateEntryFromFile($zip, $file.FullName, $name)
+        }
+    } finally {
+        $zip.Dispose()
+    }
 }
+New-PackZip $out "$dist\CobertoServerPack.zip"
+New-PackZip $bout "$dist\CobertoServerPack.mcpack"
 Write-Json "$dist\coberto_items.json" $mappings
 $sha = (Get-FileHash "$dist\CobertoServerPack.zip" -Algorithm SHA1).Hash.ToLower()
 Write-Host "Built dist\CobertoServerPack.zip (sha1 $sha), dist\CobertoServerPack.mcpack and dist\coberto_items.json"
