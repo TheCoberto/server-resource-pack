@@ -92,7 +92,7 @@ if (Test-Path $out) { Remove-Item $out -Recurse -Force }
 $assets = Join-Path $out 'assets'
 
 Write-Json "$out\pack.mcmeta" @{ pack = @{
-        description       = "Coberto's server: drinks, bows and slot machines"
+        description       = "Coberto's server: drinks, bows, slot machines and the moon"
         min_format        = 46
         max_format        = 97
         pack_format       = 46
@@ -161,6 +161,55 @@ $bootsVanilla = @{
 }
 Write-Json "$items\leather_boots.json" (Dispatch $bootsVanilla @(, @(4331, (Model 'item/candy_booties'))))
 
+# ---------- Moon: TheCoberto's face looking down at night ----------
+# Every moon phase is the face from sources\sky-face.png, faded to black at the edges.
+# The moon is drawn additively, so black is see-through and the face glows faintly.
+Add-Type -AssemblyName System.Drawing
+$faceSrc = Join-Path $root 'sources\sky-face.png'
+function New-FaceTile([int]$size) {
+    $src = [Drawing.Image]::FromFile($faceSrc)
+    $bmp = [Drawing.Bitmap]::new($size, $size)
+    $g = [Drawing.Graphics]::FromImage($bmp)
+    try {
+        $g.InterpolationMode = 'HighQualityBicubic'
+        $g.Clear([Drawing.Color]::Black)
+        # The face, without the shirt (source is 1008x1452)
+        $g.DrawImage($src, [Drawing.Rectangle]::new(0, 0, $size, $size), [Drawing.Rectangle]::new(170, 10, 660, 700), 'Pixel')
+        # Dim it so it's faint, then fade the edges to black with a radial gradient
+        $g.FillRectangle([Drawing.SolidBrush]::new([Drawing.Color]::FromArgb(70, 0, 0, 0)), 0, 0, $size, $size)
+        $path = [Drawing.Drawing2D.GraphicsPath]::new()
+        $pad = [int]($size * 0.18)
+        $path.AddEllipse(-$pad, -$pad, $size + 2 * $pad, $size + 2 * $pad)
+        $brush = [Drawing.Drawing2D.PathGradientBrush]::new($path)
+        $brush.CenterColor = [Drawing.Color]::FromArgb(0, 0, 0, 0)
+        $brush.SurroundColors = @([Drawing.Color]::Black)
+        $blend = [Drawing.Drawing2D.Blend]::new(3)
+        $blend.Positions = [single[]]@(0, 0.35, 1); $blend.Factors = [single[]]@(0, 1, 1)
+        $brush.Blend = $blend
+        $g.FillRectangle($brush, 0, 0, $size, $size)
+    } finally { $g.Dispose(); $src.Dispose() }
+    $bmp
+}
+# Old layout (1.21.4-1.21.10): one 4x2 grid of phases. Bedrock uses the same file.
+function Save-MoonGrid([string]$dest, [int]$tile) {
+    New-Item -ItemType Directory -Force (Split-Path $dest) | Out-Null
+    $face = New-FaceTile $tile
+    $grid = [Drawing.Bitmap]::new($tile * 4, $tile * 2)
+    $g = [Drawing.Graphics]::FromImage($grid)
+    $g.Clear([Drawing.Color]::Black)
+    foreach ($i in 0..7) { $g.DrawImage($face, ($i % 4) * $tile, [math]::Floor($i / 4) * $tile, $tile, $tile) }
+    $g.Dispose(); $grid.Save($dest, [Drawing.Imaging.ImageFormat]::Png); $grid.Dispose(); $face.Dispose()
+}
+Save-MoonGrid "$assets\minecraft\textures\environment\moon_phases.png" 256
+# New layout (1.21.11+): one file per phase.
+$face = New-FaceTile 256
+foreach ($p in 'full_moon', 'waning_gibbous', 'third_quarter', 'waning_crescent', 'new_moon', 'waxing_crescent', 'first_quarter', 'waxing_gibbous') {
+    $dest = "$assets\minecraft\textures\environment\celestial\moon\$p.png"
+    New-Item -ItemType Directory -Force (Split-Path $dest) | Out-Null
+    $face.Save($dest, [Drawing.Imaging.ImageFormat]::Png)
+}
+$face.Dispose()
+
 # ---------- Bedrock pack for Geyser ----------
 # Only drinks and the Mug: they're simple items. Bows, arrows, the bomb, booties and machine blocks
 # stay vanilla-looking for Bedrock players, because Bedrock custom items can't shoot, be used as
@@ -169,9 +218,9 @@ $bout = Join-Path $root 'build\bedrock'
 if (Test-Path $bout) { Remove-Item $bout -Recurse -Force }
 Write-Json "$bout\manifest.json" @{
     format_version = 2
-    header         = @{ name = "Coberto's Server Pack"; description = 'Drinks for Geyser players'; uuid = '8f4c2a6e-3b1d-4e7a-9c55-2d6b1f0a7e31'
-        version = @(1, 0, 0); min_engine_version = @(1, 21, 0) }
-    modules        = @(@{ type = 'resources'; uuid = 'c7a19e52-6f0b-4d38-8e21-5b9d3c4f6a08'; version = @(1, 0, 0) })
+    header         = @{ name = "Coberto's Server Pack"; description = 'Drinks and the moon for Geyser players'; uuid = '8f4c2a6e-3b1d-4e7a-9c55-2d6b1f0a7e31'
+        version = @(1, 1, 0); min_engine_version = @(1, 21, 0) }
+    modules        = @(@{ type = 'resources'; uuid = 'c7a19e52-6f0b-4d38-8e21-5b9d3c4f6a08'; version = @(1, 1, 0) })
 }
 $tex = [ordered]@{}
 foreach ($n in @($drinks) + 'mug') {
@@ -193,6 +242,8 @@ $mappings = @{ format_version = 2; items = @{
                 bedrock_options = @{ icon = 'coberto.mug'; creative_category = 'none' } })
     }
 }
+
+Save-MoonGrid "$bout\textures\environment\moon_phases.png" 256
 
 # ---------- Package ----------
 $dist = Join-Path $root 'dist'
