@@ -33,3 +33,7 @@ Placed machines and slot machines keep the look of their block: a resource pack 
 ## Building
 
 `build.ps1` builds everything into `dist\` from the textures in the Bedrock add-on repos (expected at `..\..\Minecraft Bedrock\`) and prints the zip's SHA-1.
+
+## Face Moon
+
+`FaceMoonPack.zip` (Java) and `FaceMoonPack.mcpack` (Bedrock) turn every moon phase into TheCoberto's face, blended into a cratered moon. They aren't set in `server.properties` or Geyser's packs folder: CobertoUtilities (`/facemoon`) sends them on the nights it picks. Built by `moon.ps1` from `sources/sky-face.png`.
